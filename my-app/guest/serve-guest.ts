@@ -167,6 +167,9 @@ export type ConfirmView = {
 const cancelSentence =
   "If you need to cancel the reservation, please call Big Al's Pizza on 02 1234 1234.";
 
+const raceSentence =
+  "Sorry, someone beat you to it! Try select another table.";
+
 export type SuccessView = {
   screen: "success";
   table: number;
@@ -183,6 +186,7 @@ export type SuccessView = {
 export type RefusedView = {
   screen: "refused";
   reservation: null;
+  message?: string;
 };
 
 export type ReserveView =
@@ -749,9 +753,16 @@ export function serveGuest(input: {
           };
         });
       const chosen = offered.find((table) => table.number === action.table);
+      const name = action.name;
+      const phone = action.phone;
+      if (chosen && !chosen.choosable && identified(name, phone)) {
+        return {
+          screen: "refused",
+          reservation: null,
+          message: raceSentence,
+        };
+      }
       if (chosen?.choosable) {
-        const name = action.name;
-        const phone = action.phone;
         if (identified(name, phone) && name !== undefined && phone !== undefined) {
           return {
             screen: "success",

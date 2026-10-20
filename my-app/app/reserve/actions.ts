@@ -1,6 +1,6 @@
 "use server";
 
-import { readReservations, saveReservation } from "@/guest/book";
+import { saveReservation, withReservations } from "@/guest/book";
 import {
   serveGuest,
   type Duration,
@@ -18,24 +18,28 @@ export async function submitReservation(
   const durationValue = String(formData.get("duration") ?? "");
   const partySize = Number(formData.get("partySize"));
   const table = Number(formData.get("table"));
-  const view = serveGuest({
-    now: new Date(),
-    reservations: readReservations(),
-    action: {
-      type: "reserve",
-      partySize: Number.isInteger(partySize) ? partySize : undefined,
-      duration: isDuration(durationValue) ? durationValue : undefined,
-      day: String(formData.get("day") ?? ""),
-      start: String(formData.get("start") ?? ""),
-      table: Number.isInteger(table) ? table : undefined,
-      name: String(formData.get("name") ?? ""),
-      phone: String(formData.get("phone") ?? ""),
-    },
+  const action = {
+    type: "reserve" as const,
+    partySize: Number.isInteger(partySize) ? partySize : undefined,
+    duration: isDuration(durationValue) ? durationValue : undefined,
+    day: String(formData.get("day") ?? ""),
+    start: String(formData.get("start") ?? ""),
+    table: Number.isInteger(table) ? table : undefined,
+    name: String(formData.get("name") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+  };
+
+  return withReservations((saved) => {
+    const view = serveGuest({
+      now: new Date(),
+      reservations: saved,
+      action,
+    });
+
+    if (view.screen === "success") {
+      saveReservation(view.reservation);
+    }
+
+    return view;
   });
-
-  if (view.screen === "success") {
-    saveReservation(view.reservation);
-  }
-
-  return view;
 }

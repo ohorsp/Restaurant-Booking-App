@@ -777,14 +777,118 @@ test("a red Table cannot be chosen", () => {
       day: "2026-10-23",
       start: "6:00 pm",
       table: 5,
-      name: "Sam Taylor",
-      phone: "0412 345 678",
     },
   });
 
   expectScreen(view, "floor");
   assert.equal(view.reservation, null);
   assert.equal(view.tables.find((table) => table.number === 5)?.choosable, false);
+});
+
+test("the first submit keeps the Table and the second Guest is refused", () => {
+  const first = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 5,
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+  });
+
+  expectScreen(first, "success");
+  assert.equal(first.reservation.table, 5);
+
+  const second = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [first.reservation],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 5,
+      name: "Sam Taylor",
+      phone: "0412 345 678",
+    },
+  });
+
+  expectScreen(second, "refused");
+  assert.equal(second.reservation, null);
+  assert.equal(
+    second.message,
+    "Sorry, someone beat you to it! Try select another table.",
+  );
+});
+
+test("after the first save, that Table is red for the overlapping interval", () => {
+  const first = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 5,
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+  });
+  expectScreen(first, "success");
+
+  const floor = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [first.reservation],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+    },
+  });
+
+  expectScreen(floor, "floor");
+  assert.equal(floor.tables.find((table) => table.number === 5)?.color, "red");
+  assert.equal(floor.tables.find((table) => table.number === 5)?.choosable, false);
+});
+
+test("a submit for a different Table still succeeds", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [
+      {
+        table: 5,
+        partySize: 2,
+        duration: "90 minutes",
+        start: "2026-10-23T07:00:00.000Z",
+        name: "Alex Kim",
+        phone: "0400 111 222",
+      },
+    ],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 6,
+      name: "Sam Taylor",
+      phone: "0412 345 678",
+    },
+  });
+
+  expectScreen(view, "success");
+  assert.equal(view.reservation.table, 6);
+  assert.equal(view.tableName, "Table 6");
 });
 
 test("the next Reservation may start when the earlier one ends", () => {

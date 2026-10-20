@@ -428,6 +428,7 @@ export function ReservationScreens({ view }: { view: ReserveView }) {
   return (
     <main className="flex flex-col gap-8">
       <Header title="Make a reservation" backHref="/" />
+      {view.message ? <p>{view.message}</p> : null}
     </main>
   );
 }
