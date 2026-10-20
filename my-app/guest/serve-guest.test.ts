@@ -1150,9 +1150,22 @@ test("adding the same Menu Item increases that line", () => {
   assert.equal(view.total, "$56");
 });
 
-test("a Guest can set a quantity from 1 to 10, and 3 or more does not ask", () => {
+test("a Guest can set a quantity from 1 to 10", () => {
   const now = atSydney("2026-10-20T18:00:00");
-  const three = serveGuest({
+  const two = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Hawaiian",
+      quantity: 2,
+      lines: [{ name: "Hawaiian", quantity: 1 }],
+    },
+  });
+  assert.equal(two.confirmation, undefined);
+  assert.deepEqual(two.lines, [{ name: "Hawaiian", quantity: 2, base: "Regular" }]);
+  assert.equal(two.total, "$38");
+
+  const askedThree = serveGuest({
     now,
     action: {
       type: "set-quantity",
@@ -1161,11 +1174,20 @@ test("a Guest can set a quantity from 1 to 10, and 3 or more does not ask", () =
       lines: [{ name: "Hawaiian", quantity: 1 }],
     },
   });
+  const three = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Hawaiian",
+      quantity: 3,
+      lines: askedThree.lines,
+      answer: "yes",
+    },
+  });
   assert.deepEqual(three.lines, [{ name: "Hawaiian", quantity: 3, base: "Regular" }]);
   assert.equal(three.total, "$57");
-  assert.equal("confirmation" in three, false);
 
-  const six = serveGuest({
+  const askedSix = serveGuest({
     now,
     action: {
       type: "set-quantity",
@@ -1174,16 +1196,37 @@ test("a Guest can set a quantity from 1 to 10, and 3 or more does not ask", () =
       lines: [{ name: "Hawaiian", quantity: 5 }],
     },
   });
+  const six = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Hawaiian",
+      quantity: 6,
+      lines: askedSix.lines,
+      answer: "yes",
+    },
+  });
   assert.deepEqual(six.lines, [{ name: "Hawaiian", quantity: 6, base: "Regular" }]);
   assert.equal(six.total, "$114");
 
-  const ten = serveGuest({
+  const askedTen = serveGuest({
     now,
     action: {
       type: "set-quantity",
       name: "Water",
       quantity: 10,
       lines: [{ name: "Water", quantity: 1 }],
+    },
+  });
+  assert.equal(askedTen.confirmation?.question, "Are you sure you want 10 of Water?");
+  const ten = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Water",
+      quantity: 10,
+      lines: askedTen.lines,
+      answer: "yes",
     },
   });
   assert.deepEqual(ten.lines, [{ name: "Water", quantity: 10 }]);
@@ -1198,6 +1241,7 @@ test("a Guest can set a quantity from 1 to 10, and 3 or more does not ask", () =
       lines: [{ name: "Water", quantity: 10 }],
     },
   });
+  assert.equal(eleven.confirmation, undefined);
   assert.deepEqual(eleven.lines, [{ name: "Water", quantity: 10 }]);
 
   const zero = serveGuest({
@@ -1209,6 +1253,7 @@ test("a Guest can set a quantity from 1 to 10, and 3 or more does not ask", () =
       lines: [{ name: "Water", quantity: 1 }],
     },
   });
+  assert.equal(zero.confirmation, undefined);
   assert.deepEqual(zero.lines, [{ name: "Water", quantity: 1 }]);
 });
 
@@ -1350,13 +1395,25 @@ test("the same Menu Item on the other Base is a second line", () => {
 
 test("the same Menu Item and the same Base stay on one line, up to a quantity of 10", () => {
   const now = atSydney("2026-10-20T18:00:00");
-  const increased = serveGuest({
+  const asked = serveGuest({
     now,
     action: {
       type: "add-menu-item",
       name: "Diavola",
       base: "Gluten Free",
       lines: [{ name: "Diavola", quantity: 2, base: "Gluten Free" }],
+    },
+  });
+  assert.equal(asked.confirmation?.question, "Are you sure you want 3 of Diavola?");
+  const increased = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Diavola",
+      base: "Gluten Free",
+      quantity: 3,
+      lines: asked.lines,
+      answer: "yes",
     },
   });
   assert.deepEqual(increased.lines, [{ name: "Diavola", quantity: 3, base: "Gluten Free" }]);
@@ -1397,9 +1454,10 @@ test("Coke, Diet Coke, Lemonade, Orange, and Water have no Base and keep their o
   }
 });
 
-test("a quantity of 3 or more on one Base does not ask, and leaves the other Base", () => {
-  const view = serveGuest({
-    now: atSydney("2026-10-20T18:00:00"),
+test("confirming 3 on one Base leaves the other Base", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const asked = serveGuest({
+    now,
     action: {
       type: "set-quantity",
       name: "Pepperoni",
@@ -1411,13 +1469,30 @@ test("a quantity of 3 or more on one Base does not ask, and leaves the other Bas
       ],
     },
   });
+  assert.equal(asked.confirmation?.question, "Are you sure you want 3 of Pepperoni?");
+  assert.deepEqual(asked.lines, [
+    { name: "Pepperoni", quantity: 1, base: "Regular" },
+    { name: "Pepperoni", quantity: 1, base: "Gluten Free" },
+  ]);
+
+  const view = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Pepperoni",
+      base: "Regular",
+      quantity: 3,
+      lines: asked.lines,
+      answer: "yes",
+    },
+  });
 
   assert.deepEqual(view.lines, [
     { name: "Pepperoni", quantity: 3, base: "Regular" },
     { name: "Pepperoni", quantity: 1, base: "Gluten Free" },
   ]);
   assert.equal(view.total, "$80");
-  assert.equal("confirmation" in view, false);
+  assert.equal(view.confirmation, undefined);
 });
 
 test("the success screen shows the Base on each pizza and garlic-bread line", () => {
@@ -1492,8 +1567,9 @@ test("removing one Base leaves the other Base of the same Menu Item", () => {
 });
 
 test("a line of 3 Gluten Free Diavola costs the Diavola price plus $12", () => {
-  const view = serveGuest({
-    now: atSydney("2026-10-20T18:00:00"),
+  const now = atSydney("2026-10-20T18:00:00");
+  const asked = serveGuest({
+    now,
     action: {
       type: "set-quantity",
       name: "Diavola",
@@ -1502,10 +1578,256 @@ test("a line of 3 Gluten Free Diavola costs the Diavola price plus $12", () => {
       lines: [{ name: "Diavola", quantity: 1, base: "Gluten Free" }],
     },
   });
+  assert.equal(asked.confirmation?.question, "Are you sure you want 3 of Diavola?");
+  const view = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Diavola",
+      base: "Gluten Free",
+      quantity: 3,
+      lines: asked.lines,
+      answer: "yes",
+    },
+  });
 
   assert.deepEqual(view.lines, [{ name: "Diavola", quantity: 3, base: "Gluten Free" }]);
   assert.equal(view.total, "$75");
-  assert.equal("confirmation" in view, false);
+  assert.equal(view.confirmation, undefined);
+});
+
+test("increasing a line to 3 asks before that quantity is kept", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "set-quantity",
+      name: "Pepperoni",
+      quantity: 3,
+      lines: [{ name: "Pepperoni", quantity: 1, base: "Regular" }],
+    },
+  });
+
+  assert.equal(view.confirmation?.question, "Are you sure you want 3 of Pepperoni?");
+  assert.deepEqual(view.lines, [{ name: "Pepperoni", quantity: 1, base: "Regular" }]);
+  assert.equal(view.total, "$19");
+  assert.equal(view.takeawayOrder, null);
+});
+
+test("yes keeps the quantity that was asked about", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const asked = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Pepperoni",
+      quantity: 3,
+      lines: [{ name: "Pepperoni", quantity: 1, base: "Regular" }],
+    },
+  });
+  const kept = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Pepperoni",
+      quantity: 3,
+      base: "Regular",
+      lines: asked.lines,
+      answer: "yes",
+    },
+  });
+
+  assert.equal(kept.confirmation, undefined);
+  assert.deepEqual(kept.lines, [{ name: "Pepperoni", quantity: 3, base: "Regular" }]);
+  assert.equal(kept.total, "$57");
+});
+
+test("no removes that whole line only", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const asked = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Pepperoni",
+      base: "Regular",
+      quantity: 3,
+      lines: [
+        { name: "Pepperoni", quantity: 2, base: "Regular" },
+        { name: "Pepperoni", quantity: 1, base: "Gluten Free" },
+        { name: "Coke", quantity: 1 },
+      ],
+    },
+  });
+  const declined = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Pepperoni",
+      quantity: 3,
+      base: "Regular",
+      lines: asked.lines,
+      answer: "no",
+    },
+  });
+
+  assert.equal(declined.confirmation, undefined);
+  assert.deepEqual(declined.lines, [
+    { name: "Pepperoni", quantity: 1, base: "Gluten Free" },
+    { name: "Coke", quantity: 1 },
+  ]);
+  assert.equal(declined.total, "$27");
+});
+
+test("increasing a line from 5 to 6 asks using 6 and the Menu Item name", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const asked = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Hawaiian",
+      quantity: 6,
+      lines: [{ name: "Hawaiian", quantity: 5, base: "Regular" }],
+    },
+  });
+
+  assert.equal(asked.confirmation?.question, "Are you sure you want 6 of Hawaiian?");
+  assert.deepEqual(asked.lines, [{ name: "Hawaiian", quantity: 5, base: "Regular" }]);
+  assert.equal(asked.total, "$95");
+
+  const kept = serveGuest({
+    now,
+    action: {
+      type: "confirm-quantity",
+      name: "Hawaiian",
+      quantity: 6,
+      base: "Regular",
+      lines: asked.lines,
+      answer: "yes",
+    },
+  });
+  assert.deepEqual(kept.lines, [{ name: "Hawaiian", quantity: 6, base: "Regular" }]);
+  assert.equal(kept.total, "$114");
+  assert.equal(kept.confirmation, undefined);
+});
+
+test("adding another of the same Menu Item and Base asks before the line reaches 3", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "add-menu-item",
+      name: "Pepperoni",
+      base: "Regular",
+      lines: [{ name: "Pepperoni", quantity: 2, base: "Regular" }],
+    },
+  });
+
+  assert.equal(view.confirmation?.question, "Are you sure you want 3 of Pepperoni?");
+  assert.deepEqual(view.lines, [{ name: "Pepperoni", quantity: 2, base: "Regular" }]);
+  assert.equal(view.total, "$38");
+});
+
+test("decreasing a quantity does not ask", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "set-quantity",
+      name: "Pepperoni",
+      quantity: 5,
+      lines: [{ name: "Pepperoni", quantity: 6, base: "Regular" }],
+    },
+  });
+
+  assert.equal(view.confirmation, undefined);
+  assert.deepEqual(view.lines, [{ name: "Pepperoni", quantity: 5, base: "Regular" }]);
+  assert.equal(view.total, "$95");
+});
+
+test("a new line at quantity 1 does not ask", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: { type: "add-menu-item", name: "Pepperoni", lines: [] },
+  });
+
+  assert.equal(view.confirmation, undefined);
+  assert.deepEqual(view.lines, [{ name: "Pepperoni", quantity: 1, base: "Regular" }]);
+  assert.equal(view.total, "$19");
+});
+
+test("one Gluten Free Pepperoni beside two Regular Pepperoni does not ask", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "add-menu-item",
+      name: "Pepperoni",
+      base: "Gluten Free",
+      lines: [{ name: "Pepperoni", quantity: 2, base: "Regular" }],
+    },
+  });
+
+  assert.equal(view.confirmation, undefined);
+  assert.deepEqual(view.lines, [
+    { name: "Pepperoni", quantity: 2, base: "Regular" },
+    { name: "Pepperoni", quantity: 1, base: "Gluten Free" },
+  ]);
+  assert.equal(view.total, "$61");
+});
+
+test("Garlic Bread and Cheesy Garlic Bread follow the same quantity rule", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const separate = serveGuest({
+    now,
+    action: {
+      type: "add-menu-item",
+      name: "Cheesy Garlic Bread",
+      lines: [{ name: "Garlic Bread", quantity: 2, base: "Regular" }],
+    },
+  });
+  assert.equal(separate.confirmation, undefined);
+  assert.deepEqual(separate.lines, [
+    { name: "Garlic Bread", quantity: 2, base: "Regular" },
+    { name: "Cheesy Garlic Bread", quantity: 1, base: "Regular" },
+  ]);
+  assert.equal(separate.total, "$27");
+
+  const otherBase = serveGuest({
+    now,
+    action: {
+      type: "add-menu-item",
+      name: "Garlic Bread",
+      base: "Gluten Free",
+      lines: [{ name: "Garlic Bread", quantity: 2, base: "Regular" }],
+    },
+  });
+  assert.equal(otherBase.confirmation, undefined);
+  assert.deepEqual(otherBase.lines, [
+    { name: "Garlic Bread", quantity: 2, base: "Regular" },
+    { name: "Garlic Bread", quantity: 1, base: "Gluten Free" },
+  ]);
+  assert.equal(otherBase.total, "$28");
+
+  const garlic = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Garlic Bread",
+      quantity: 3,
+      lines: [{ name: "Garlic Bread", quantity: 1, base: "Regular" }],
+    },
+  });
+  assert.equal(garlic.confirmation?.question, "Are you sure you want 3 of Garlic Bread?");
+  assert.deepEqual(garlic.lines, [{ name: "Garlic Bread", quantity: 1, base: "Regular" }]);
+
+  const cheesy = serveGuest({
+    now,
+    action: {
+      type: "add-menu-item",
+      name: "Cheesy Garlic Bread",
+      lines: [{ name: "Cheesy Garlic Bread", quantity: 5, base: "Regular" }],
+    },
+  });
+  assert.equal(cheesy.confirmation?.question, "Are you sure you want 6 of Cheesy Garlic Bread?");
+  assert.deepEqual(cheesy.lines, [
+    { name: "Cheesy Garlic Bread", quantity: 5, base: "Regular" },
+  ]);
 });
 
 test("outside Dinner service, a Takeaway Order is not accepted", () => {
