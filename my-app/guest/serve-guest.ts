@@ -427,12 +427,20 @@ export type PlacedTakeawayOrder = {
   message: string;
 };
 
+export type QuantityConfirmation = {
+  question: string;
+  name: string;
+  quantity: number;
+  base?: Base;
+};
+
 export type TakeawayView = {
   closed: string | null;
   groups: TakeawayGroup[];
   lines: TakeawayLine[];
   total: string;
   takeawayOrder: PlacedTakeawayOrder | null;
+  confirmation?: QuantityConfirmation;
 };
 
 export type TakeawayAction =
@@ -446,6 +454,14 @@ export type TakeawayAction =
       base?: Base;
     }
   | { type: "remove-line"; name: string; lines: TakeawayLine[]; base?: Base }
+  | {
+      type: "confirm-quantity";
+      name: string;
+      quantity: number;
+      lines: TakeawayLine[];
+      base?: Base;
+      answer: "yes" | "no";
+    }
   | {
       type: "place-takeaway";
       lines: TakeawayLine[];
@@ -586,6 +602,39 @@ function openTakeaway(lines: TakeawayLine[]): TakeawayView {
   };
 }
 
+function currentQuantity(lines: TakeawayLine[], name: string, base?: Base): number | null {
+  const chosen = withBase(name, 1, base).base;
+  const line = normalizeLines(lines).find(
+    (candidate) => candidate.name === name && recordedBase(candidate) === chosen,
+  );
+  return line === undefined ? null : line.quantity;
+}
+
+function asksBeforeKeeping(current: number | null, next: number): boolean {
+  return (
+    current !== null &&
+    Number.isInteger(next) &&
+    next >= 3 &&
+    next <= 10 &&
+    next > current
+  );
+}
+
+function largeQuantityConfirmation(
+  name: string,
+  quantity: number,
+  base?: Base,
+): QuantityConfirmation {
+  const chosen = withBase(name, 1, base).base;
+  const confirmation = {
+    question: `Are you sure you want ${quantity} of ${name}?`,
+    name,
+    quantity,
+  };
+  if (chosen === undefined) return confirmation;
+  return { ...confirmation, base: chosen };
+}
+
 
 function placeTakeaway(lines: TakeawayLine[], name: string, phone: string): TakeawayView {
   const normalized = normalizeLines(lines);
@@ -630,9 +679,15 @@ export function serveGuest(input: {
     if (!duringDinnerService(input.now)) return closedTakeaway();
     if (input.action.type === "takeaway") return openTakeaway([]);
     if (input.action.type === "add-menu-item") {
-      return openTakeaway(
-        addMenuItem(input.action.lines, input.action.name, input.action.base),
-      );
+      const { name, lines, base } = input.action;
+      const current = currentQuantity(lines, name, base);
+      if (current !== null && asksBeforeKeeping(current, current + 1)) {
+        return {
+          ...openTakeaway(lines),
+          confirmation: largeQuantityConfirmation(name, current + 1, base),
+        };
+      }
+      return openTakeaway(addMenuItem(lines, name, base));
     }
     if (input.action.type === "remove-line") {
       const { name, lines, base } = input.action;
@@ -644,14 +699,24 @@ export function serveGuest(input: {
     if (input.action.type === "place-takeaway") {
       return placeTakeaway(input.action.lines, input.action.name, input.action.phone);
     }
-    return openTakeaway(
-      setQuantity(
-        input.action.lines,
-        input.action.name,
-        input.action.quantity,
-        input.action.base,
-      ),
-    );
+    if (input.action.type === "confirm-quantity") {
+      const { name, quantity, lines, base, answer } = input.action;
+      if (answer === "yes") {
+        return openTakeaway(setQuantity(lines, name, quantity, base));
+      }
+      const chosen = withBase(name, 1, base).base;
+      return openTakeaway(
+        lines.filter((line) => !(line.name === name && recordedBase(line) === chosen)),
+      );
+    }
+    const { name, quantity, lines, base } = input.action;
+    if (asksBeforeKeeping(currentQuantity(lines, name, base), quantity)) {
+      return {
+        ...openTakeaway(lines),
+        confirmation: largeQuantityConfirmation(name, quantity, base),
+      };
+    }
+    return openTakeaway(setQuantity(lines, name, quantity, base));
   }
 
   const action = input.action;

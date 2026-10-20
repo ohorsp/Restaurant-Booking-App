@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { serveGuest, type TakeawayAction, type TakeawayView } from "@/guest/serve-guest";
@@ -9,6 +9,12 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
   const [view, setView] = useState(initial);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const promptRef = useRef<HTMLElement>(null);
+  const question = view.confirmation?.question;
+
+  useEffect(() => {
+    if (question) promptRef.current?.scrollIntoView({ block: "nearest" });
+  }, [question]);
 
   function ask(action: TakeawayAction) {
     setView(serveGuest({ now: new Date(), action }));
@@ -47,8 +53,51 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
     );
   }
 
+  const confirmation = view.confirmation;
+
   return (
     <div className="flex flex-col gap-8">
+      {confirmation ? (
+        <section ref={promptRef} className="flex flex-col gap-3">
+          <p>{confirmation.question}</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              className="h-12 text-base"
+              onClick={() =>
+                ask({
+                  type: "confirm-quantity",
+                  name: confirmation.name,
+                  quantity: confirmation.quantity,
+                  base: confirmation.base,
+                  lines: view.lines,
+                  answer: "yes",
+                })
+              }
+            >
+              Yes
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 text-base"
+              onClick={() =>
+                ask({
+                  type: "confirm-quantity",
+                  name: confirmation.name,
+                  quantity: confirmation.quantity,
+                  base: confirmation.base,
+                  lines: view.lines,
+                  answer: "no",
+                })
+              }
+            >
+              No
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
       {view.groups.map((group) => (
         <section key={group.name} className="flex flex-col gap-3">
           <h2 className="text-xl font-semibold">{group.name}</h2>
