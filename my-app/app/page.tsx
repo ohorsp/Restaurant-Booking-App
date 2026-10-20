@@ -17,7 +17,12 @@ export default function Home() {
         <Button size="lg" className="h-12 w-full text-base">
           Make a reservation
         </Button>
-        <Button size="lg" className="h-12 w-full text-base">
+        <Button
+          size="lg"
+          className="h-12 w-full text-base"
+          nativeButton={false}
+          render={<Link href="/takeaway" />}
+        >
           Takeaway order
         </Button>
       </nav>
