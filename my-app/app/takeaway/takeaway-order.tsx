@@ -25,10 +25,15 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
         <ul className="flex flex-col">
           {order.lines.map((line) => (
             <li
-              key={line.name}
+              key={line.base ? `${line.name}:${line.base}` : line.name}
               className="flex items-baseline justify-between gap-4 border-b border-border py-3"
             >
-              <span>{line.name}</span>
+              <span className="flex flex-col">
+                <span>{line.name}</span>
+                {line.base ? (
+                  <span className="text-sm text-muted-foreground">{line.base}</span>
+                ) : null}
+              </span>
               <span className="font-medium">{line.quantity}</span>
             </li>
           ))}
@@ -51,26 +56,52 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
             {group.items.map((item) => (
               <li
                 key={item.name}
-                className="flex items-center justify-between gap-3 border-b border-border py-3"
+                className="flex flex-col gap-3 border-b border-border py-3"
               >
-                <div className="flex min-w-0 flex-col">
-                  <span>{item.name}</span>
-                  <span className="text-sm text-muted-foreground">{item.price}</span>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-col">
+                    <span>{item.name}</span>
+                    <span className="text-sm text-muted-foreground">{item.price}</span>
+                  </div>
+                  {item.bases ? null : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-12 px-4 text-base"
+                      onClick={() =>
+                        ask({
+                          type: "add-menu-item",
+                          name: item.name,
+                          lines: view.lines,
+                        })
+                      }
+                    >
+                      Add
+                    </Button>
+                  )}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-12 px-4 text-base"
-                  onClick={() =>
-                    ask({
-                      type: "add-menu-item",
-                      name: item.name,
-                      lines: view.lines,
-                    })
-                  }
-                >
-                  Add
-                </Button>
+                {item.bases ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {item.bases.map((base) => (
+                      <Button
+                        key={base}
+                        type="button"
+                        variant="outline"
+                        className="h-12 px-4 text-base"
+                        onClick={() =>
+                          ask({
+                            type: "add-menu-item",
+                            name: item.name,
+                            base,
+                            lines: view.lines,
+                          })
+                        }
+                      >
+                        {base}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -82,9 +113,17 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
           <h2 className="text-xl font-semibold">Order</h2>
           <ul className="flex flex-col">
             {view.lines.map((line) => (
-              <li key={line.name} className="flex flex-col gap-3 border-b border-border py-3">
+              <li
+                key={line.base ? `${line.name}:${line.base}` : line.name}
+                className="flex flex-col gap-3 border-b border-border py-3"
+              >
                 <div className="flex items-baseline justify-between gap-4">
-                  <span>{line.name}</span>
+                  <span className="flex flex-col">
+                    <span>{line.name}</span>
+                    {line.base ? (
+                      <span className="text-sm text-muted-foreground">{line.base}</span>
+                    ) : null}
+                  </span>
                   <span className="font-medium">{line.quantity}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
@@ -97,6 +136,7 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
                       ask({
                         type: "set-quantity",
                         name: line.name,
+                        base: line.base,
                         quantity: line.quantity - 1,
                         lines: view.lines,
                       })
@@ -113,6 +153,7 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
                       ask({
                         type: "set-quantity",
                         name: line.name,
+                        base: line.base,
                         quantity: line.quantity + 1,
                         lines: view.lines,
                       })
@@ -128,6 +169,7 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
                       ask({
                         type: "remove-line",
                         name: line.name,
+                        base: line.base,
                         lines: view.lines,
                       })
                     }
