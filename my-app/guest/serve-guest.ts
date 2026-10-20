@@ -99,10 +99,6 @@ function chosenPartySize(partySize: number | undefined): number | null {
   return partySizes.includes(partySize) ? partySize : null;
 }
 
-function fittingTableCount(partySize: number): number {
-  return tables.filter((table) => table.seats >= partySize).length;
-}
-
 export type CalendarDay = {
   date: string;
   label: string;
@@ -137,8 +133,8 @@ export type FloorTable = {
   seats: number;
   row: "Front" | "Middle" | "Back";
   center: boolean;
-  color: "green";
-  choosable: true;
+  color: "green" | "red";
+  choosable: boolean;
 };
 
 export type FloorView = {
@@ -206,6 +202,7 @@ export type ReserveAction = {
   table?: number;
   name?: string;
   phone?: string;
+  change?: "party size" | "duration";
 };
 
 const WEEKDAYS = [
@@ -319,39 +316,32 @@ function sydneyInstant(
   return new Date(utcGuess - offset);
 }
 
-function hasLegalStart(
-  year: number,
-  month: number,
-  day: number,
-  duration: Duration,
+function calendarDays(
   now: Date,
-): boolean {
-  const last = DINNER_CLOSE - durationMinutes(duration);
-  for (let minutes = DINNER_OPEN; minutes <= last; minutes += 30) {
-    const hour = Math.floor(minutes / 60);
-    const minute = minutes % 60;
-    if (sydneyInstant(year, month, day, hour, minute).getTime() > now.getTime()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function calendarDays(now: Date, duration: Duration, partySize: number): CalendarDay[] {
+  duration: Duration,
+  partySize: number,
+  reservations: Reservation[],
+): CalendarDay[] {
   const today = sydneyCivil(now);
   const days: CalendarDay[] = [];
   for (let offset = 0; offset <= 30; offset++) {
     const date = shiftCivil(today.year, today.month, today.day, offset);
     const weekday = weekdayIndex(date.year, date.month, date.day);
     const closed = weekday === 0 || weekday === 1;
-    const bookable =
-      !closed &&
-      hasLegalStart(date.year, date.month, date.day, duration, now);
+    const freeTables = closed
+      ? 0
+      : freeTableCount(
+          isoDate(date.year, date.month, date.day),
+          duration,
+          now,
+          partySize,
+          reservations,
+        );
     days.push({
       date: isoDate(date.year, date.month, date.day),
       label: WEEKDAYS[weekday] + " " + date.day + " " + MONTHS[date.month - 1],
-      count: closed ? null : bookable ? fittingTableCount(partySize) : 0,
-      selectable: bookable,
+      count: closed ? null : freeTables,
+      selectable: freeTables > 0,
     });
   }
   return days;
@@ -363,19 +353,56 @@ function formatTime(hour: number, minute: number): string {
   return hour12 + ":" + String(minute).padStart(2, "0") + " " + suffix;
 }
 
-function legalStarts(date: string, duration: Duration, now: Date): string[] {
+function legalStarts(
+  date: string,
+  duration: Duration,
+  now: Date,
+  partySize: number,
+  reservations: Reservation[],
+): string[] {
   const [year, month, day] = date.split("-").map(Number);
   const last = DINNER_CLOSE - durationMinutes(duration);
+  const fitting = tables.filter((table) => table.seats >= partySize);
   const starts: string[] = [];
   for (let minutes = DINNER_OPEN; minutes <= last; minutes += 30) {
     const hour = Math.floor(minutes / 60);
     const minute = minutes % 60;
-    if (sydneyInstant(year, month, day, hour, minute).getTime() <= now.getTime()) {
+    const instant = sydneyInstant(year, month, day, hour, minute);
+    if (instant.getTime() <= now.getTime()) {
       continue;
     }
-    starts.push(formatTime(hour, minute));
+    const free = fitting.some(
+      (table) => !occupied(table.number, instant, duration, reservations),
+    );
+    if (free) starts.push(formatTime(hour, minute));
   }
   return starts;
+}
+
+function freeTableCount(
+  date: string,
+  duration: Duration,
+  now: Date,
+  partySize: number,
+  reservations: Reservation[],
+): number {
+  const [year, month, day] = date.split("-").map(Number);
+  const last = DINNER_CLOSE - durationMinutes(duration);
+  const fitting = tables.filter((table) => table.seats >= partySize);
+  let count = 0;
+  for (const table of fitting) {
+    for (let minutes = DINNER_OPEN; minutes <= last; minutes += 30) {
+      const hour = Math.floor(minutes / 60);
+      const minute = minutes % 60;
+      const instant = sydneyInstant(year, month, day, hour, minute);
+      if (instant.getTime() <= now.getTime()) continue;
+      if (!occupied(table.number, instant, duration, reservations)) {
+        count += 1;
+        break;
+      }
+    }
+  }
+  return count;
 }
 
 function startInstant(date: string, startLabel: string): string {
@@ -389,6 +416,23 @@ function startInstant(date: string, startLabel: string): string {
   if (match[3] === "am" && hour === 12) hour = 0;
   const [year, month, day] = date.split("-").map(Number);
   return sydneyInstant(year, month, day, hour, minute).toISOString();
+}
+
+function occupied(
+  tableNumber: number,
+  start: Date,
+  duration: Duration,
+  reservations: Reservation[],
+): boolean {
+  const startMs = start.getTime();
+  const endMs = startMs + durationMinutes(duration) * 60 * 1000;
+  return reservations.some((reservation) => {
+    if (reservation.table !== tableNumber) return false;
+    const reservedStart = new Date(reservation.start).getTime();
+    const reservedEnd =
+      reservedStart + durationMinutes(reservation.duration) * 60 * 1000;
+    return startMs < reservedEnd && reservedStart < endMs;
+  });
 }
 
 function identified(name: string | undefined, phone: string | undefined): boolean {
@@ -426,23 +470,51 @@ export function serveGuest(input: {
   }
 
   const duration = chosenDuration(action.duration);
-  const days = calendarDays(input.now, duration, partySize);
+  const days = calendarDays(
+    input.now,
+    duration,
+    partySize,
+    input.reservations ?? [],
+  );
+  if (action.change === "party size" || action.change === "duration") {
+    return {
+      screen: "calendar",
+      partySize,
+      partySizes,
+      duration,
+      durations,
+      days,
+      reservation: null,
+    };
+  }
+
   const day = days.find((candidate) => candidate.date === action.day);
   if (day?.selectable) {
-    const starts = legalStarts(day.date, duration, input.now);
+    const starts = legalStarts(
+      day.date,
+      duration,
+      input.now,
+      partySize,
+      input.reservations ?? [],
+    );
     if (action.start && starts.includes(action.start)) {
+      const startAt = new Date(startInstant(day.date, action.start));
+      const saved = input.reservations ?? [];
       const offered = tables
         .filter((table) => table.seats >= partySize)
-        .map((table) => ({
-          number: table.number,
-          seats: table.seats,
-          row: table.row,
-          center: table.center,
-          color: "green" as const,
-          choosable: true as const,
-        }));
+        .map((table) => {
+          const free = !occupied(table.number, startAt, duration, saved);
+          return {
+            number: table.number,
+            seats: table.seats,
+            row: table.row,
+            center: table.center,
+            color: free ? ("green" as const) : ("red" as const),
+            choosable: free,
+          };
+        });
       const chosen = offered.find((table) => table.number === action.table);
-      if (chosen) {
+      if (chosen?.choosable) {
         const name = action.name;
         const phone = action.phone;
         if (identified(name, phone) && name !== undefined && phone !== undefined) {

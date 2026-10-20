@@ -13,6 +13,10 @@ function isDuration(value: string | undefined): value is Duration {
   return value === "1 hour" || value === "90 minutes" || value === "2 hours";
 }
 
+function isChange(value: string | undefined): value is "party size" | "duration" {
+  return value === "party size" || value === "duration";
+}
+
 export default function ReservePage({
   searchParams,
 }: {
@@ -41,6 +45,7 @@ async function Reservation({
   const partySize = Number(first(query.partySize));
   const table = Number(first(query.table));
   const duration = first(query.duration);
+  const change = first(query.change);
   const view = serveGuest({
     now: new Date(),
     reservations: readReservations(),
@@ -51,6 +56,7 @@ async function Reservation({
       day: first(query.day),
       start: first(query.start),
       table: Number.isInteger(table) ? table : undefined,
+      change: isChange(change) ? change : undefined,
     },
   });
 
