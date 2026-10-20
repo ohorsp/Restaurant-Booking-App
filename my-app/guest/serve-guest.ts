@@ -721,7 +721,7 @@ function placeTakeaway(
 ): TakeawayView {
   const normalized = normalizeLines(lines);
   const screen = openTakeaway(normalized);
-  if (normalized.length === 0 || name === "" || phone === "") return screen;
+  if (normalized.length === 0 || !identified(name, phone)) return screen;
   const takeawayOrder: PlacedTakeawayOrder = {
     lines: normalized,
     total: screen.total,

@@ -1405,6 +1405,47 @@ test("an empty basket cannot be sent", () => {
   assert.equal(view.takeawayOrder, null);
 });
 
+test("the success screen appears only after a name and phone number", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const lines = [{ name: "Pepperoni", quantity: 1 }];
+
+  const blankName = serveGuest({
+    now,
+    action: {
+      type: "place-takeaway",
+      lines,
+      name: "   ",
+      phone: "0412 345 678",
+    },
+  });
+  assert.equal(blankName.closed, null);
+  assert.equal(blankName.takeawayOrder, null);
+
+  const blankPhone = serveGuest({
+    now,
+    action: {
+      type: "place-takeaway",
+      lines,
+      name: "Sam Taylor",
+      phone: "   ",
+    },
+  });
+  assert.equal(blankPhone.closed, null);
+  assert.equal(blankPhone.takeawayOrder, null);
+
+  const placed = serveGuest({
+    now,
+    action: {
+      type: "place-takeaway",
+      lines,
+      name: "Sam Taylor",
+      phone: "0412 345 678",
+    },
+  });
+  assert.equal(placed.takeawayOrder?.name, "Sam Taylor");
+  assert.equal(placed.takeawayOrder?.phone, "0412 345 678");
+});
+
 test("a Takeaway Order is placed only after a name and phone number, stored as typed", () => {
   const now = atSydney("2026-10-20T18:00:00");
   const lines = [{ name: "Margherita", quantity: 1 }];
