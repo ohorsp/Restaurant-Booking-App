@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { serveGuest, type TakeawayAction, type TakeawayView } from "@/guest/serve-guest";
@@ -9,6 +9,13 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
   const [view, setView] = useState(initial);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [notes, setNotes] = useState("");
+  const promptRef = useRef<HTMLElement>(null);
+  const question = view.confirmation?.question;
+
+  useEffect(() => {
+    if (question) promptRef.current?.scrollIntoView({ block: "nearest" });
+  }, [question]);
 
   function ask(action: TakeawayAction) {
     setView(serveGuest({ now: new Date(), action }));
@@ -38,6 +45,12 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
             </li>
           ))}
         </ul>
+        {order.notes ? (
+          <p className="flex flex-col gap-1">
+            <span className="text-sm text-muted-foreground">Notes</span>
+            <span>{order.notes}</span>
+          </p>
+        ) : null}
         <p className="flex items-baseline justify-between gap-4 text-base font-medium">
           <span>Total</span>
           <span>{order.total}</span>
@@ -47,8 +60,51 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
     );
   }
 
+  const confirmation = view.confirmation;
+
   return (
     <div className="flex flex-col gap-8">
+      {confirmation ? (
+        <section ref={promptRef} className="flex flex-col gap-3">
+          <p>{confirmation.question}</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              className="h-12 text-base"
+              onClick={() =>
+                ask({
+                  type: "confirm-quantity",
+                  name: confirmation.name,
+                  quantity: confirmation.quantity,
+                  base: confirmation.base,
+                  lines: view.lines,
+                  answer: "yes",
+                })
+              }
+            >
+              Yes
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 text-base"
+              onClick={() =>
+                ask({
+                  type: "confirm-quantity",
+                  name: confirmation.name,
+                  quantity: confirmation.quantity,
+                  base: confirmation.base,
+                  lines: view.lines,
+                  answer: "no",
+                })
+              }
+            >
+              No
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
       {view.groups.map((group) => (
         <section key={group.name} className="flex flex-col gap-3">
           <h2 className="text-xl font-semibold">{group.name}</h2>
@@ -180,6 +236,16 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
               </li>
             ))}
           </ul>
+          {view.allergens.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-medium">Allergens</h3>
+              <ul className="flex flex-col">
+                {view.allergens.map((allergen) => (
+                  <li key={allergen}>{allergen}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <p className="flex items-baseline justify-between gap-4 text-base font-medium">
             <span>Total</span>
             <span>{view.total}</span>
@@ -196,6 +262,7 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
             lines: view.lines,
             name,
             phone,
+            notes,
           });
         }}
       >
@@ -222,6 +289,16 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
             required
             value={phone}
             onValueChange={setPhone}
+            className="h-12 text-base"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="guest-notes">
+          Notes
+          <Input
+            id="guest-notes"
+            name="notes"
+            value={notes}
+            onValueChange={setNotes}
             className="h-12 text-base"
           />
         </label>
