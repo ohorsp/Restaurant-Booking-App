@@ -9,6 +9,7 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
   const [view, setView] = useState(initial);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [notes, setNotes] = useState("");
 
   function ask(action: TakeawayAction) {
     setView(serveGuest({ now: new Date(), action }));
@@ -38,6 +39,12 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
             </li>
           ))}
         </ul>
+        {order.notes ? (
+          <p className="flex flex-col gap-1">
+            <span className="text-sm text-muted-foreground">Notes</span>
+            <span>{order.notes}</span>
+          </p>
+        ) : null}
         <p className="flex items-baseline justify-between gap-4 text-base font-medium">
           <span>Total</span>
           <span>{order.total}</span>
@@ -180,6 +187,16 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
               </li>
             ))}
           </ul>
+          {view.allergens.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-medium">Allergens</h3>
+              <ul className="flex flex-col">
+                {view.allergens.map((allergen) => (
+                  <li key={allergen}>{allergen}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <p className="flex items-baseline justify-between gap-4 text-base font-medium">
             <span>Total</span>
             <span>{view.total}</span>
@@ -196,6 +213,7 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
             lines: view.lines,
             name,
             phone,
+            notes,
           });
         }}
       >
@@ -222,6 +240,16 @@ export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
             required
             value={phone}
             onValueChange={setPhone}
+            className="h-12 text-base"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="guest-notes">
+          Notes
+          <Input
+            id="guest-notes"
+            name="notes"
+            value={notes}
+            onValueChange={setNotes}
             className="h-12 text-base"
           />
         </label>

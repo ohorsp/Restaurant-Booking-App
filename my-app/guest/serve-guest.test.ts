@@ -1214,3 +1214,199 @@ test("outside Dinner service, a Takeaway Order is not accepted", () => {
   assert.equal(view.takeawayOrder, null);
   assert.deepEqual(view.lines, []);
 });
+
+test("a Takeaway Order has one optional notes field, and a Reservation has none", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const blank = serveGuest({
+    now,
+    action: {
+      type: "place-takeaway",
+      lines: [{ name: "Pepperoni", quantity: 1 }],
+      name: "Sam",
+      phone: "0412 345 678",
+      notes: "   ",
+    },
+  });
+  assert.ok(blank.takeawayOrder);
+  assert.equal(Object.hasOwn(blank.takeawayOrder, "notes"), false);
+  assert.equal(Object.hasOwn(blank.takeawayOrder.lines[0], "notes"), false);
+
+  const written = serveGuest({
+    now,
+    action: {
+      type: "place-takeaway",
+      lines: [{ name: "Pepperoni", quantity: 1, base: "Regular" }],
+      name: "Sam",
+      phone: "0412 345 678",
+      notes: "No onion",
+    },
+  });
+  assert.equal(written.takeawayOrder?.notes, "No onion");
+  assert.equal(Object.hasOwn(written.takeawayOrder?.lines[0] ?? {}, "notes"), false);
+
+  const reservation = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 7,
+      name: "Sam",
+      phone: "0412 345 678",
+    },
+  });
+  expectScreen(reservation, "success");
+  assert.equal(Object.hasOwn(reservation, "notes"), false);
+  assert.equal(Object.hasOwn(reservation.reservation, "notes"), false);
+});
+
+test("an empty basket lists no allergens", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: { type: "takeaway" },
+  });
+
+  assert.deepEqual(view.allergens, []);
+});
+
+test("the basket lists gluten only for a pizza or garlic bread whose Base is Regular", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const regular = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Marinara", base: "Regular", lines: [] },
+  });
+  assert.deepEqual(regular.allergens, ["gluten"]);
+
+  const glutenFree = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Marinara", base: "Gluten Free", lines: [] },
+  });
+  assert.deepEqual(glutenFree.allergens, []);
+
+  const besideGlutenFree = serveGuest({
+    now,
+    action: {
+      type: "add-menu-item",
+      name: "Marinara",
+      base: "Gluten Free",
+      lines: [{ name: "Marinara", quantity: 2, base: "Regular" }],
+    },
+  });
+  assert.deepEqual(besideGlutenFree.allergens, ["gluten"]);
+});
+
+test("the basket lists milk for every pizza except Marinara", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const withMilk = [
+    "Cheese and Tomato",
+    "Pepperoni",
+    "Hawaiian",
+    "Meat Lovers",
+    "BBQ Chicken",
+    "Supreme",
+    "Margherita",
+    "Diavola",
+    "Quattro Formaggi",
+    "Capricciosa",
+    "Prosciutto",
+  ];
+
+  for (const name of withMilk) {
+    const view = serveGuest({
+      now,
+      action: { type: "add-menu-item", name, base: "Gluten Free", lines: [] },
+    });
+    assert.deepEqual(view.allergens, ["milk"], name);
+  }
+
+  const regularPepperoni = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Pepperoni", base: "Regular", lines: [] },
+  });
+  assert.deepEqual(regularPepperoni.allergens, ["gluten", "milk"]);
+});
+
+test("the basket lists milk for Garlic Bread and Cheesy Garlic Bread", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const glutenFreeGarlic = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Garlic Bread", base: "Gluten Free", lines: [] },
+  });
+  assert.deepEqual(glutenFreeGarlic.allergens, ["milk"]);
+
+  const glutenFreeCheesy = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Cheesy Garlic Bread", base: "Gluten Free", lines: [] },
+  });
+  assert.deepEqual(glutenFreeCheesy.allergens, ["milk"]);
+
+  const regularGarlic = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Garlic Bread", base: "Regular", lines: [] },
+  });
+  assert.deepEqual(regularGarlic.allergens, ["gluten", "milk"]);
+
+  const regularCheesy = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Cheesy Garlic Bread", lines: [] },
+  });
+  assert.deepEqual(regularCheesy.allergens, ["gluten", "milk"]);
+});
+
+test("drinks add neither gluten nor milk", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  for (const name of ["Coke", "Diet Coke", "Lemonade", "Orange", "Water"]) {
+    const view = serveGuest({
+      now,
+      action: { type: "add-menu-item", name, lines: [] },
+    });
+    assert.deepEqual(view.allergens, [], name);
+  }
+
+  const withMarinara = serveGuest({
+    now,
+    action: {
+      type: "add-menu-item",
+      name: "Water",
+      lines: [{ name: "Marinara", quantity: 1, base: "Gluten Free" }],
+    },
+  });
+  assert.deepEqual(withMarinara.allergens, []);
+
+  const withPepperoni = serveGuest({
+    now,
+    action: {
+      type: "add-menu-item",
+      name: "Coke",
+      lines: [{ name: "Pepperoni", quantity: 1, base: "Regular" }],
+    },
+  });
+  assert.deepEqual(withPepperoni.allergens, ["gluten", "milk"]);
+});
+
+test("nuts are not listed and there is no shared-kitchen warning", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "place-takeaway",
+      lines: [
+        { name: "Supreme", quantity: 1, base: "Regular" },
+        { name: "Pepperoni", quantity: 1, base: "Gluten Free" },
+        { name: "Marinara", quantity: 1, base: "Regular" },
+        { name: "Garlic Bread", quantity: 1, base: "Gluten Free" },
+        { name: "Coke", quantity: 1 },
+      ],
+      name: "Sam",
+      phone: "0412 345 678",
+      notes: "Leave at the counter",
+    },
+  });
+
+  assert.deepEqual(view.allergens, ["gluten", "milk"]);
+  assert.equal(view.takeawayOrder?.notes, "Leave at the counter");
+  assert.equal(view.takeawayOrder?.message, waitMessage);
+  assert.equal(JSON.stringify(view).toLowerCase().includes("shared"), false);
+});

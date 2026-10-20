@@ -425,13 +425,17 @@ export type PlacedTakeawayOrder = {
   name: string;
   phone: string;
   message: string;
+  notes?: string;
 };
+
+export type Allergen = "gluten" | "milk";
 
 export type TakeawayView = {
   closed: string | null;
   groups: TakeawayGroup[];
   lines: TakeawayLine[];
   total: string;
+  allergens: Allergen[];
   takeawayOrder: PlacedTakeawayOrder | null;
 };
 
@@ -451,6 +455,7 @@ export type TakeawayAction =
       lines: TakeawayLine[];
       name: string;
       phone: string;
+      notes?: string;
     };
 
 function duringDinnerService(now: Date): boolean {
@@ -525,6 +530,7 @@ function closedTakeaway(): TakeawayView {
     groups: [],
     lines: [],
     total: "$0",
+    allergens: [],
     takeawayOrder: null,
   };
 }
@@ -575,6 +581,28 @@ function normalizeLines(lines: TakeawayLine[]): TakeawayLine[] {
   });
 }
 
+function menuGroup(name: string): MenuGroup["name"] | null {
+  for (const group of menu) {
+    if (group.items.some((item) => item.name === name)) return group.name;
+  }
+  return null;
+}
+
+function basketAllergens(lines: TakeawayLine[]): Allergen[] {
+  let gluten = false;
+  let milk = false;
+  for (const line of lines) {
+    const group = menuGroup(line.name);
+    const pizza = group === "Traditional pizzas" || group === "Italian pizzas";
+    if (line.base === "Regular" && (pizza || group === "garlic bread")) gluten = true;
+    if ((pizza && line.name !== "Marinara") || group === "garlic bread") milk = true;
+  }
+  const allergens: Allergen[] = [];
+  if (gluten) allergens.push("gluten");
+  if (milk) allergens.push("milk");
+  return allergens;
+}
+
 function openTakeaway(lines: TakeawayLine[]): TakeawayView {
   const normalized = normalizeLines(lines);
   return {
@@ -582,25 +610,30 @@ function openTakeaway(lines: TakeawayLine[]): TakeawayView {
     groups: orderGroups(),
     lines: normalized,
     total: orderTotal(normalized),
+    allergens: basketAllergens(normalized),
     takeawayOrder: null,
   };
 }
 
 
-function placeTakeaway(lines: TakeawayLine[], name: string, phone: string): TakeawayView {
+function placeTakeaway(
+  lines: TakeawayLine[],
+  name: string,
+  phone: string,
+  notes?: string,
+): TakeawayView {
   const normalized = normalizeLines(lines);
   const screen = openTakeaway(normalized);
   if (normalized.length === 0 || name === "" || phone === "") return screen;
-  return {
-    ...screen,
-    takeawayOrder: {
-      lines: normalized,
-      total: screen.total,
-      name,
-      phone,
-      message: waitMessage,
-    },
+  const takeawayOrder: PlacedTakeawayOrder = {
+    lines: normalized,
+    total: screen.total,
+    name,
+    phone,
+    message: waitMessage,
   };
+  if (notes !== undefined && notes.trim() !== "") takeawayOrder.notes = notes;
+  return { ...screen, takeawayOrder };
 }
 
 // The Menu stays readable at any clock. Viewing it does not create a Takeaway Order.
@@ -642,7 +675,12 @@ export function serveGuest(input: {
       );
     }
     if (input.action.type === "place-takeaway") {
-      return placeTakeaway(input.action.lines, input.action.name, input.action.phone);
+      return placeTakeaway(
+        input.action.lines,
+        input.action.name,
+        input.action.phone,
+        input.action.notes,
+      );
     }
     return openTakeaway(
       setQuantity(
