@@ -3,16 +3,14 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { serveGuest, type TakeawayView } from "@/guest/serve-guest";
+import { serveGuest, type TakeawayAction, type TakeawayView } from "@/guest/serve-guest";
 
 export function TakeawayOrder({ initial }: { initial: TakeawayView }) {
   const [view, setView] = useState(initial);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
 
-  function ask(
-    action: Exclude<Parameters<typeof serveGuest>[0]["action"], { type: "view-menu" }>,
-  ) {
+  function ask(action: TakeawayAction) {
     setView(serveGuest({ now: new Date(), action }));
   }
 

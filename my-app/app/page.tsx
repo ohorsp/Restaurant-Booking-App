@@ -14,7 +14,12 @@ export default function Home() {
         >
           View menu
         </Button>
-        <Button size="lg" className="h-12 w-full text-base">
+        <Button
+          size="lg"
+          className="h-12 w-full text-base"
+          nativeButton={false}
+          render={<Link href="/reserve" />}
+        >
           Make a reservation
         </Button>
         <Button
