@@ -444,11 +444,218 @@ function identified(name: string | undefined, phone: string | undefined): boolea
   );
 }
 
+const closedMessage =
+  "Big Al's Pizza is closed. Dinner service is Tuesday to Saturday, 5:30 pm\u201310:30 pm.";
+
+const waitMessage =
+  "Average wait time is 20\u201360 minutes. Pay the balance at Big Al's Pizza.";
+
+export type Base = "Regular" | "Gluten Free";
+
+export type TakeawayLine = {
+  name: string;
+  quantity: number;
+  base?: Base;
+};
+
+export type TakeawayGroup = {
+  name: MenuGroup["name"];
+  items: { name: string; price: string; bases: Base[] | null }[];
+};
+
+export type PlacedTakeawayOrder = {
+  lines: TakeawayLine[];
+  total: string;
+  name: string;
+  phone: string;
+  message: string;
+};
+
+export type TakeawayView = {
+  closed: string | null;
+  groups: TakeawayGroup[];
+  lines: TakeawayLine[];
+  total: string;
+  takeawayOrder: PlacedTakeawayOrder | null;
+};
+
+export type TakeawayAction =
+  | { type: "takeaway" }
+  | { type: "add-menu-item"; name: string; lines: TakeawayLine[]; base?: Base }
+  | {
+      type: "set-quantity";
+      name: string;
+      quantity: number;
+      lines: TakeawayLine[];
+      base?: Base;
+    }
+  | { type: "remove-line"; name: string; lines: TakeawayLine[]; base?: Base }
+  | {
+      type: "place-takeaway";
+      lines: TakeawayLine[];
+      name: string;
+      phone: string;
+    };
+
+function duringDinnerService(now: Date): boolean {
+  const parts: Record<string, string> = {};
+  for (const part of new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Sydney",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now)) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  let hour = Number(parts.hour);
+  if (hour === 24) hour = 0;
+  const minutes = hour * 60 + Number(parts.minute);
+  const openDay =
+    parts.weekday === "Tue" ||
+    parts.weekday === "Wed" ||
+    parts.weekday === "Thu" ||
+    parts.weekday === "Fri" ||
+    parts.weekday === "Sat";
+  return openDay && minutes >= 17 * 60 + 30 && minutes <= 22 * 60 + 30;
+}
+
+function menuItem(name: string): MenuItem | null {
+  for (const group of menu) {
+    for (const item of group.items) {
+      if (item.name === name) return item;
+    }
+  }
+  return null;
+}
+
+function regularPrice(name: string): number | null {
+  const item = menuItem(name);
+  return item === null ? null : Number(item.price.slice(1));
+}
+
+function withBase(name: string, quantity: number, base?: Base): TakeawayLine {
+  if (menuItem(name)?.base === null) return { name, quantity };
+  return { name, quantity, base: base === "Gluten Free" ? "Gluten Free" : "Regular" };
+}
+
+function orderTotal(lines: TakeawayLine[]): string {
+  let sum = 0;
+  for (const line of lines) {
+    const price = regularPrice(line.name);
+    if (price === null) continue;
+    const each = line.base === "Gluten Free" ? price + 4 : price;
+    sum += each * line.quantity;
+  }
+  return `$${sum}`;
+}
+
+const lineBases: Base[] = ["Regular", "Gluten Free"];
+
+function orderGroups(): TakeawayGroup[] {
+  return menu.map((group) => ({
+    name: group.name,
+    items: group.items.map((item) => ({
+      name: item.name,
+      price: item.price,
+      bases: item.base === null ? null : lineBases,
+    })),
+  }));
+}
+
+function closedTakeaway(): TakeawayView {
+  return {
+    closed: closedMessage,
+    groups: [],
+    lines: [],
+    total: "$0",
+    takeawayOrder: null,
+  };
+}
+
+
+function recordedBase(line: TakeawayLine): Base | undefined {
+  if (line.base !== undefined) return line.base;
+  if (menuItem(line.name)?.base === null) return undefined;
+  return "Regular";
+}
+
+function addMenuItem(lines: TakeawayLine[], name: string, base?: Base): TakeawayLine[] {
+  if (regularPrice(name) === null) return lines;
+  const chosen = withBase(name, 1, base).base;
+  if (!lines.some((line) => line.name === name && recordedBase(line) === chosen)) {
+    return [...lines, withBase(name, 1, base)];
+  }
+  return lines.map((line) => {
+    if (line.name !== name || recordedBase(line) !== chosen || line.quantity >= 10) return line;
+    return withBase(name, line.quantity + 1, chosen);
+  });
+}
+
+function setQuantity(
+  lines: TakeawayLine[],
+  name: string,
+  quantity: number,
+  base?: Base,
+): TakeawayLine[] {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) return lines;
+  if (regularPrice(name) === null) return lines;
+  const chosen = withBase(name, 1, base).base;
+  if (!lines.some((line) => line.name === name && recordedBase(line) === chosen)) return lines;
+  return lines.map((line) =>
+    line.name === name && recordedBase(line) === chosen ? withBase(name, quantity, chosen) : line,
+  );
+}
+function normalizeLine(line: TakeawayLine): TakeawayLine | null {
+  if (regularPrice(line.name) === null) return null;
+  if (!Number.isInteger(line.quantity) || line.quantity < 1) return null;
+  return withBase(line.name, Math.min(line.quantity, 10), recordedBase(line));
+}
+
+function normalizeLines(lines: TakeawayLine[]): TakeawayLine[] {
+  return lines.flatMap((line) => {
+    const normalized = normalizeLine(line);
+    return normalized === null ? [] : [normalized];
+  });
+}
+
+function openTakeaway(lines: TakeawayLine[]): TakeawayView {
+  const normalized = normalizeLines(lines);
+  return {
+    closed: null,
+    groups: orderGroups(),
+    lines: normalized,
+    total: orderTotal(normalized),
+    takeawayOrder: null,
+  };
+}
+
+
+function placeTakeaway(lines: TakeawayLine[], name: string, phone: string): TakeawayView {
+  const normalized = normalizeLines(lines);
+  const screen = openTakeaway(normalized);
+  if (normalized.length === 0 || name === "" || phone === "") return screen;
+  return {
+    ...screen,
+    takeawayOrder: {
+      lines: normalized,
+      total: screen.total,
+      name,
+      phone,
+      message: waitMessage,
+    },
+  };
+}
+
 // The Menu stays readable at any clock. Viewing it does not create a Takeaway Order.
 export function serveGuest(input: {
   now: Date;
   action: { type: "view-menu" };
 }): ViewMenu;
+export function serveGuest(input: {
+  now: Date;
+  action: TakeawayAction;
+}): TakeawayView;
 export function serveGuest(input: {
   now: Date;
   reservations: Reservation[];
@@ -457,10 +664,38 @@ export function serveGuest(input: {
 export function serveGuest(input: {
   now: Date;
   reservations?: Reservation[];
-  action: { type: "view-menu" } | ReserveAction;
-}): ViewMenu | CalendarView | StartsView | FloorView | ConfirmView | SuccessView | RefusedView {
+  action: { type: "view-menu" } | TakeawayAction | ReserveAction;
+}): ViewMenu | TakeawayView | CalendarView | StartsView | FloorView | ConfirmView | SuccessView | RefusedView {
   if (input.action.type === "view-menu") {
     return { menu, takeawayOrder: null };
+  }
+
+  if (input.action.type !== "reserve") {
+    if (!duringDinnerService(input.now)) return closedTakeaway();
+    if (input.action.type === "takeaway") return openTakeaway([]);
+    if (input.action.type === "add-menu-item") {
+      return openTakeaway(
+        addMenuItem(input.action.lines, input.action.name, input.action.base),
+      );
+    }
+    if (input.action.type === "remove-line") {
+      const { name, lines, base } = input.action;
+      const chosen = withBase(name, 1, base).base;
+      return openTakeaway(
+        lines.filter((line) => !(line.name === name && recordedBase(line) === chosen)),
+      );
+    }
+    if (input.action.type === "place-takeaway") {
+      return placeTakeaway(input.action.lines, input.action.name, input.action.phone);
+    }
+    return openTakeaway(
+      setQuantity(
+        input.action.lines,
+        input.action.name,
+        input.action.quantity,
+        input.action.base,
+      ),
+    );
   }
 
   const action = input.action;

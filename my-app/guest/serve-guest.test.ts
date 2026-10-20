@@ -1031,3 +1031,494 @@ test("changing the duration clears the chosen day, start, and Table", () => {
   assert.equal(cleared.duration, "2 hours");
   assert.equal(cleared.reservation, null);
 });
+
+const waitMessage =
+  "Average wait time is 20\u201360 minutes. Pay the balance at Big Al's Pizza.";
+
+const closedMessage =
+  "Big Al's Pizza is closed. Dinner service is Tuesday to Saturday, 5:30 pm\u201310:30 pm.";
+
+test("outside Dinner service, Takeaway order shows the closed message and places nothing", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T15:00:00"),
+    action: { type: "takeaway" },
+  });
+
+  assert.equal(view.closed, closedMessage);
+  assert.equal(view.takeawayOrder, null);
+});
+
+test("Dinner service is Tuesday to Saturday, 5:30 pm through 10:30 pm Sydney time", () => {
+  const open = [
+    "2026-10-20T17:30:00",
+    "2026-10-20T22:30:00",
+    "2026-10-21T19:00:00",
+    "2026-10-22T17:30:00",
+    "2026-10-23T22:30:00",
+    "2026-10-24T18:00:00",
+  ];
+  const shut = [
+    "2026-10-18T18:00:00",
+    "2026-10-19T22:30:00",
+    "2026-10-20T17:29:00",
+    "2026-10-20T22:31:00",
+    "2026-10-25T17:30:00",
+  ];
+
+  for (const local of open) {
+    const view = serveGuest({
+      now: atSydney(local),
+      action: { type: "takeaway" },
+    });
+    assert.equal(view.closed, null, local);
+    assert.equal(view.takeawayOrder, null, local);
+  }
+
+  for (const local of shut) {
+    const view = serveGuest({
+      now: atSydney(local),
+      action: { type: "takeaway" },
+    });
+    assert.equal(view.closed, closedMessage, local);
+    assert.equal(view.takeawayOrder, null, local);
+  }
+});
+
+test("during Dinner service, Takeaway order lists Menu Items at Regular prices", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: { type: "takeaway" },
+  });
+
+  assert.equal(view.closed, null);
+  assert.equal(view.takeawayOrder, null);
+  assert.deepEqual(view.lines, []);
+  assert.equal(view.total, "$0");
+  assert.deepEqual(
+    view.groups.map((group) => group.name),
+    ["Traditional pizzas", "Italian pizzas", "garlic bread", "drinks"],
+  );
+  const items = view.groups.flatMap((group) => group.items);
+  assert.deepEqual(
+    items.find((item) => item.name === "Pepperoni"),
+    { name: "Pepperoni", price: "$19", bases: ["Regular", "Gluten Free"] },
+  );
+  assert.deepEqual(
+    items.find((item) => item.name === "Water"),
+    { name: "Water", price: "$3", bases: null },
+  );
+});
+
+test("a Guest can add a Menu Item at its Regular price", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const pepperoni = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Pepperoni", lines: [] },
+  });
+  assert.equal(pepperoni.closed, null);
+  assert.equal(pepperoni.takeawayOrder, null);
+  assert.deepEqual(pepperoni.lines, [{ name: "Pepperoni", quantity: 1, base: "Regular" }]);
+  assert.equal(pepperoni.total, "$19");
+
+  const garlic = serveGuest({
+    now,
+    action: { type: "add-menu-item", name: "Cheesy Garlic Bread", lines: [] },
+  });
+  assert.deepEqual(garlic.lines, [
+    { name: "Cheesy Garlic Bread", quantity: 1, base: "Regular" },
+  ]);
+  assert.equal(garlic.total, "$11");
+});
+
+test("adding the same Menu Item increases that line", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "add-menu-item",
+      name: "Pepperoni",
+      lines: [
+        { name: "Margherita", quantity: 1 },
+        { name: "Pepperoni", quantity: 1 },
+      ],
+    },
+  });
+
+  assert.deepEqual(view.lines, [
+    { name: "Margherita", quantity: 1, base: "Regular" },
+    { name: "Pepperoni", quantity: 2, base: "Regular" },
+  ]);
+  assert.equal(view.total, "$56");
+});
+
+test("a Guest can set a quantity from 1 to 10, and 3 or more does not ask", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const three = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Hawaiian",
+      quantity: 3,
+      lines: [{ name: "Hawaiian", quantity: 1 }],
+    },
+  });
+  assert.deepEqual(three.lines, [{ name: "Hawaiian", quantity: 3, base: "Regular" }]);
+  assert.equal(three.total, "$57");
+  assert.equal("confirmation" in three, false);
+
+  const six = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Hawaiian",
+      quantity: 6,
+      lines: [{ name: "Hawaiian", quantity: 5 }],
+    },
+  });
+  assert.deepEqual(six.lines, [{ name: "Hawaiian", quantity: 6, base: "Regular" }]);
+  assert.equal(six.total, "$114");
+
+  const ten = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Water",
+      quantity: 10,
+      lines: [{ name: "Water", quantity: 1 }],
+    },
+  });
+  assert.deepEqual(ten.lines, [{ name: "Water", quantity: 10 }]);
+  assert.equal(ten.total, "$30");
+
+  const eleven = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Water",
+      quantity: 11,
+      lines: [{ name: "Water", quantity: 10 }],
+    },
+  });
+  assert.deepEqual(eleven.lines, [{ name: "Water", quantity: 10 }]);
+
+  const zero = serveGuest({
+    now,
+    action: {
+      type: "set-quantity",
+      name: "Water",
+      quantity: 0,
+      lines: [{ name: "Water", quantity: 1 }],
+    },
+  });
+  assert.deepEqual(zero.lines, [{ name: "Water", quantity: 1 }]);
+});
+
+test("adding the same Menu Item stops at a quantity of 10", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "add-menu-item",
+      name: "Coke",
+      lines: [{ name: "Coke", quantity: 10 }],
+    },
+  });
+  assert.deepEqual(view.lines, [{ name: "Coke", quantity: 10 }]);
+  assert.equal(view.total, "$40");
+});
+
+test("a Guest can remove a line", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "remove-line",
+      name: "Coke",
+      lines: [
+        { name: "Pepperoni", quantity: 1 },
+        { name: "Coke", quantity: 2 },
+      ],
+    },
+  });
+  assert.deepEqual(view.lines, [{ name: "Pepperoni", quantity: 1, base: "Regular" }]);
+  assert.equal(view.total, "$19");
+  assert.equal(view.takeawayOrder, null);
+});
+
+test("an empty basket cannot be sent", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "place-takeaway",
+      lines: [],
+      name: "Sam",
+      phone: "0412 345 678",
+    },
+  });
+  assert.equal(view.closed, null);
+  assert.equal(view.takeawayOrder, null);
+});
+
+test("a Takeaway Order is placed only after a name and phone number, stored as typed", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const lines = [{ name: "Margherita", quantity: 1 }];
+  const missingName = serveGuest({
+    now,
+    action: { type: "place-takeaway", lines, name: "", phone: "0412 345 678" },
+  });
+  assert.equal(missingName.takeawayOrder, null);
+
+  const missingPhone = serveGuest({
+    now,
+    action: { type: "place-takeaway", lines, name: "Sam", phone: "" },
+  });
+  assert.equal(missingPhone.takeawayOrder, null);
+
+  const placed = serveGuest({
+    now,
+    action: {
+      type: "place-takeaway",
+      lines: [
+        { name: "Pepperoni", quantity: 2 },
+        { name: "Water", quantity: 1 },
+      ],
+      name: "  Sam  ",
+      phone: "04 1234 5678",
+    },
+  });
+  assert.equal(placed.closed, null);
+  assert.deepEqual(placed.takeawayOrder, {
+    lines: [
+      { name: "Pepperoni", quantity: 2, base: "Regular" },
+      { name: "Water", quantity: 1 },
+    ],
+    total: "$41",
+    name: "  Sam  ",
+    phone: "04 1234 5678",
+    message: waitMessage,
+  });
+});
+
+test("a large Takeaway Order keeps the same wait sentence", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-24T22:30:00"),
+    action: {
+      type: "place-takeaway",
+      lines: [{ name: "Meat Lovers", quantity: 8 }],
+      name: "Alex",
+      phone: "0400000000",
+    },
+  });
+  assert.equal(view.takeawayOrder && view.takeawayOrder.total, "$184");
+  assert.equal(view.takeawayOrder && view.takeawayOrder.message, waitMessage);
+});
+
+test("a pizza line has one Base, and Regular is the default", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: { type: "add-menu-item", name: "Diavola", lines: [] },
+  });
+
+  assert.deepEqual(view.lines, [{ name: "Diavola", quantity: 1, base: "Regular" }]);
+  assert.equal(view.total, "$21");
+});
+
+test("a garlic-bread line has one Base, and Gluten Free adds $4", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: { type: "add-menu-item", name: "Garlic Bread", base: "Gluten Free", lines: [] },
+  });
+
+  assert.deepEqual(view.lines, [{ name: "Garlic Bread", quantity: 1, base: "Gluten Free" }]);
+  assert.equal(view.total, "$12");
+});
+
+test("the same Menu Item on the other Base is a second line", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "add-menu-item",
+      name: "Diavola",
+      base: "Gluten Free",
+      lines: [{ name: "Diavola", quantity: 1, base: "Regular" }],
+    },
+  });
+
+  assert.deepEqual(view.lines, [
+    { name: "Diavola", quantity: 1, base: "Regular" },
+    { name: "Diavola", quantity: 1, base: "Gluten Free" },
+  ]);
+  assert.equal(view.total, "$46");
+});
+
+test("the same Menu Item and the same Base stay on one line, up to a quantity of 10", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const increased = serveGuest({
+    now,
+    action: {
+      type: "add-menu-item",
+      name: "Diavola",
+      base: "Gluten Free",
+      lines: [{ name: "Diavola", quantity: 2, base: "Gluten Free" }],
+    },
+  });
+  assert.deepEqual(increased.lines, [{ name: "Diavola", quantity: 3, base: "Gluten Free" }]);
+  assert.equal(increased.total, "$75");
+
+  const capped = serveGuest({
+    now,
+    action: {
+      type: "add-menu-item",
+      name: "Cheesy Garlic Bread",
+      base: "Gluten Free",
+      lines: [{ name: "Cheesy Garlic Bread", quantity: 10, base: "Gluten Free" }],
+    },
+  });
+  assert.deepEqual(capped.lines, [
+    { name: "Cheesy Garlic Bread", quantity: 10, base: "Gluten Free" },
+  ]);
+  assert.equal(capped.total, "$150");
+});
+
+test("Coke, Diet Coke, Lemonade, Orange, and Water have no Base and keep their one price", () => {
+  const now = atSydney("2026-10-20T18:00:00");
+  const drinks = [
+    ["Coke", "$4"],
+    ["Diet Coke", "$4"],
+    ["Lemonade", "$4"],
+    ["Orange", "$4"],
+    ["Water", "$3"],
+  ] as const;
+
+  for (const [name, price] of drinks) {
+    const view = serveGuest({
+      now,
+      action: { type: "add-menu-item", name, base: "Gluten Free", lines: [] },
+    });
+    assert.deepEqual(view.lines, [{ name, quantity: 1 }]);
+    assert.equal(view.total, price);
+  }
+});
+
+test("a quantity of 3 or more on one Base does not ask, and leaves the other Base", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "set-quantity",
+      name: "Pepperoni",
+      base: "Regular",
+      quantity: 3,
+      lines: [
+        { name: "Pepperoni", quantity: 1, base: "Regular" },
+        { name: "Pepperoni", quantity: 1, base: "Gluten Free" },
+      ],
+    },
+  });
+
+  assert.deepEqual(view.lines, [
+    { name: "Pepperoni", quantity: 3, base: "Regular" },
+    { name: "Pepperoni", quantity: 1, base: "Gluten Free" },
+  ]);
+  assert.equal(view.total, "$80");
+  assert.equal("confirmation" in view, false);
+});
+
+test("the success screen shows the Base on each pizza and garlic-bread line", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "place-takeaway",
+      lines: [
+        { name: "Diavola", quantity: 3, base: "Gluten Free" },
+        { name: "Garlic Bread", quantity: 1, base: "Regular" },
+        { name: "Coke", quantity: 1 },
+      ],
+      name: "Sam",
+      phone: "0412 345 678",
+    },
+  });
+
+  assert.deepEqual(view.takeawayOrder, {
+    lines: [
+      { name: "Diavola", quantity: 3, base: "Gluten Free" },
+      { name: "Garlic Bread", quantity: 1, base: "Regular" },
+      { name: "Coke", quantity: 1 },
+    ],
+    total: "$87",
+    name: "Sam",
+    phone: "0412 345 678",
+    message: waitMessage,
+  });
+});
+
+test("pizzas and garlic breads offer Regular or Gluten Free, and drinks offer no Base", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: { type: "takeaway" },
+  });
+  const items = view.groups.flatMap((group) => group.items);
+
+  assert.deepEqual(
+    items.find((item) => item.name === "Diavola"),
+    { name: "Diavola", price: "$21", bases: ["Regular", "Gluten Free"] },
+  );
+  assert.deepEqual(
+    items.find((item) => item.name === "Garlic Bread"),
+    { name: "Garlic Bread", price: "$8", bases: ["Regular", "Gluten Free"] },
+  );
+  assert.deepEqual(
+    items.find((item) => item.name === "Cheesy Garlic Bread"),
+    { name: "Cheesy Garlic Bread", price: "$11", bases: ["Regular", "Gluten Free"] },
+  );
+  for (const name of ["Coke", "Diet Coke", "Lemonade", "Orange", "Water"]) {
+    const item = items.find((candidate) => candidate.name === name);
+    assert.equal(item?.bases, null);
+  }
+});
+
+test("removing one Base leaves the other Base of the same Menu Item", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "remove-line",
+      name: "Diavola",
+      base: "Gluten Free",
+      lines: [
+        { name: "Diavola", quantity: 1, base: "Regular" },
+        { name: "Diavola", quantity: 2, base: "Gluten Free" },
+      ],
+    },
+  });
+
+  assert.deepEqual(view.lines, [{ name: "Diavola", quantity: 1, base: "Regular" }]);
+  assert.equal(view.total, "$21");
+});
+
+test("a line of 3 Gluten Free Diavola costs the Diavola price plus $12", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T18:00:00"),
+    action: {
+      type: "set-quantity",
+      name: "Diavola",
+      base: "Gluten Free",
+      quantity: 3,
+      lines: [{ name: "Diavola", quantity: 1, base: "Gluten Free" }],
+    },
+  });
+
+  assert.deepEqual(view.lines, [{ name: "Diavola", quantity: 3, base: "Gluten Free" }]);
+  assert.equal(view.total, "$75");
+  assert.equal("confirmation" in view, false);
+});
+
+test("outside Dinner service, a Takeaway Order is not accepted", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-18T18:00:00"),
+    action: {
+      type: "place-takeaway",
+      lines: [{ name: "Pepperoni", quantity: 1 }],
+      name: "Sam",
+      phone: "0412 345 678",
+    },
+  });
+  assert.equal(view.closed, closedMessage);
+  assert.equal(view.takeawayOrder, null);
+  assert.deepEqual(view.lines, []);
+});
