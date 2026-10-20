@@ -1,15 +1,11 @@
 "use server";
 
-import { saveReservation, withReservations } from "@/guest/book";
+import { saveReservation, withReservations } from "@/guest/saved-reservations";
 import {
+  isDuration,
   serveGuest,
-  type Duration,
   type ReserveView,
 } from "@/guest/serve-guest";
-
-function isDuration(value: string): value is Duration {
-  return value === "1 hour" || value === "90 minutes" || value === "2 hours";
-}
 
 export async function submitReservation(
   _previous: ReserveView | null,

@@ -1,16 +1,12 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { readReservations } from "@/guest/book";
-import { serveGuest, type Duration } from "@/guest/serve-guest";
+import { readReservations } from "@/guest/saved-reservations";
+import { isDuration, serveGuest } from "@/guest/serve-guest";
 import { ConfirmStep } from "./confirm-step";
 import { ReservationScreens } from "./screens";
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function isDuration(value: string | undefined): value is Duration {
-  return value === "1 hour" || value === "90 minutes" || value === "2 hours";
 }
 
 function isChange(value: string | undefined): value is "party size" | "duration" {

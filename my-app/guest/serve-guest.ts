@@ -70,7 +70,18 @@ export type Reservation = {
 };
 
 const partySizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-const durations: Duration[] = ["1 hour", "90 minutes", "2 hours"];
+
+const durationMinutesByLabel = {
+  "1 hour": 60,
+  "90 minutes": 90,
+  "2 hours": 120,
+} as const satisfies Record<Duration, number>;
+
+const durations = Object.keys(durationMinutesByLabel) as Duration[];
+
+export function isDuration(value: string | undefined): value is Duration {
+  return value !== undefined && Object.hasOwn(durationMinutesByLabel, value);
+}
 
 type DiningTable = {
   number: number;
@@ -272,16 +283,16 @@ function isoDate(year: number, month: number, day: number) {
 const DINNER_OPEN = 17 * 60 + 30;
 const DINNER_CLOSE = 22 * 60 + 30;
 
+function dinnerServiceDay(weekday: number): boolean {
+  return weekday >= 2 && weekday <= 6;
+}
+
 function durationMinutes(duration: Duration): number {
-  if (duration === "1 hour") return 60;
-  if (duration === "90 minutes") return 90;
-  return 120;
+  return durationMinutesByLabel[duration];
 }
 
 function chosenDuration(duration: Duration | undefined): Duration {
-  return duration !== undefined && durations.includes(duration)
-    ? duration
-    : "90 minutes";
+  return isDuration(duration) ? duration : "90 minutes";
 }
 
 function sydneyInstant(
@@ -331,7 +342,7 @@ function calendarDays(
   for (let offset = 0; offset <= 30; offset++) {
     const date = shiftCivil(today.year, today.month, today.day, offset);
     const weekday = weekdayIndex(date.year, date.month, date.day);
-    const closed = weekday === 0 || weekday === 1;
+    const closed = !dinnerServiceDay(weekday);
     const freeTables = closed
       ? 0
       : freeTableCount(
@@ -439,7 +450,7 @@ function occupied(
   });
 }
 
-function identified(name: string | undefined, phone: string | undefined): boolean {
+function nameAndPhoneArePresent(name: string | undefined, phone: string | undefined): boolean {
   return (
     typeof name === "string" &&
     name.trim() !== "" &&
@@ -523,10 +534,10 @@ export type TakeawayAction =
     };
 
 function duringDinnerService(now: Date): boolean {
+  const civil = sydneyCivil(now);
   const parts: Record<string, string> = {};
   for (const part of new Intl.DateTimeFormat("en-AU", {
     timeZone: "Australia/Sydney",
-    weekday: "short",
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
@@ -536,13 +547,11 @@ function duringDinnerService(now: Date): boolean {
   let hour = Number(parts.hour);
   if (hour === 24) hour = 0;
   const minutes = hour * 60 + Number(parts.minute);
-  const openDay =
-    parts.weekday === "Tue" ||
-    parts.weekday === "Wed" ||
-    parts.weekday === "Thu" ||
-    parts.weekday === "Fri" ||
-    parts.weekday === "Sat";
-  return openDay && minutes >= 17 * 60 + 30 && minutes <= 22 * 60 + 30;
+  return (
+    dinnerServiceDay(weekdayIndex(civil.year, civil.month, civil.day)) &&
+    minutes >= DINNER_OPEN &&
+    minutes <= DINNER_CLOSE
+  );
 }
 
 function menuItem(name: string): MenuItem | null {
@@ -604,6 +613,11 @@ function recordedBase(line: TakeawayLine): Base | undefined {
   if (line.base !== undefined) return line.base;
   if (menuItem(line.name)?.base === null) return undefined;
   return "Regular";
+}
+
+function dropLine(lines: TakeawayLine[], name: string, base?: Base): TakeawayLine[] {
+  const chosen = withBase(name, 1, base).base;
+  return lines.filter((line) => !(line.name === name && recordedBase(line) === chosen));
 }
 
 function addMenuItem(lines: TakeawayLine[], name: string, base?: Base): TakeawayLine[] {
@@ -687,7 +701,7 @@ function currentQuantity(lines: TakeawayLine[], name: string, base?: Base): numb
   return line === undefined ? null : line.quantity;
 }
 
-function asksBeforeKeeping(current: number | null, next: number): boolean {
+function largeQuantityWaitingForYesOrNo(current: number | null, next: number): boolean {
   return (
     current !== null &&
     Number.isInteger(next) &&
@@ -721,7 +735,7 @@ function placeTakeaway(
 ): TakeawayView {
   const normalized = normalizeLines(lines);
   const screen = openTakeaway(normalized);
-  if (normalized.length === 0 || !identified(name, phone)) return screen;
+  if (normalized.length === 0 || !nameAndPhoneArePresent(name, phone)) return screen;
   const takeawayOrder: PlacedTakeawayOrder = {
     lines: normalized,
     total: screen.total,
@@ -762,7 +776,7 @@ export function serveGuest(input: {
     if (input.action.type === "add-menu-item") {
       const { name, lines, base } = input.action;
       const current = currentQuantity(lines, name, base);
-      if (current !== null && asksBeforeKeeping(current, current + 1)) {
+      if (current !== null && largeQuantityWaitingForYesOrNo(current, current + 1)) {
         return {
           ...openTakeaway(lines),
           confirmation: largeQuantityConfirmation(name, current + 1, base),
@@ -772,10 +786,7 @@ export function serveGuest(input: {
     }
     if (input.action.type === "remove-line") {
       const { name, lines, base } = input.action;
-      const chosen = withBase(name, 1, base).base;
-      return openTakeaway(
-        lines.filter((line) => !(line.name === name && recordedBase(line) === chosen)),
-      );
+      return openTakeaway(dropLine(lines, name, base));
     }
     if (input.action.type === "place-takeaway") {
       return placeTakeaway(
@@ -790,13 +801,10 @@ export function serveGuest(input: {
       if (answer === "yes") {
         return openTakeaway(setQuantity(lines, name, quantity, base));
       }
-      const chosen = withBase(name, 1, base).base;
-      return openTakeaway(
-        lines.filter((line) => !(line.name === name && recordedBase(line) === chosen)),
-      );
+      return openTakeaway(dropLine(lines, name, base));
     }
     const { name, quantity, lines, base } = input.action;
-    if (asksBeforeKeeping(currentQuantity(lines, name, base), quantity)) {
+    if (largeQuantityWaitingForYesOrNo(currentQuantity(lines, name, base), quantity)) {
       return {
         ...openTakeaway(lines),
         confirmation: largeQuantityConfirmation(name, quantity, base),
@@ -858,7 +866,7 @@ export function serveGuest(input: {
       const chosen = offered.find((table) => table.number === action.table);
       const name = action.name;
       const phone = action.phone;
-      if (chosen && !chosen.choosable && identified(name, phone)) {
+      if (chosen && !chosen.choosable && nameAndPhoneArePresent(name, phone)) {
         return {
           screen: "refused",
           reservation: null,
@@ -866,7 +874,7 @@ export function serveGuest(input: {
         };
       }
       if (chosen?.choosable) {
-        if (identified(name, phone) && name !== undefined && phone !== undefined) {
+        if (nameAndPhoneArePresent(name, phone) && name !== undefined && phone !== undefined) {
           return {
             screen: "success",
             table: chosen.number,
