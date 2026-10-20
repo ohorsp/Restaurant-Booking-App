@@ -724,6 +724,314 @@ test("a Table with fewer seats than the party is not confirmed", () => {
   );
 });
 
+test("a fitting Table that overlaps a saved Reservation is red and a free fitting Table stays green", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [
+      {
+        table: 5,
+        partySize: 2,
+        duration: "90 minutes",
+        start: "2026-10-23T07:00:00.000Z",
+        name: "Alex Kim",
+        phone: "0400 111 222",
+      },
+    ],
+    action: {
+      type: "reserve",
+      partySize: 3,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+    },
+  });
+
+  expectScreen(view, "floor");
+  assert.deepEqual(
+    view.tables.find((table) => table.number === 5),
+    { number: 5, seats: 4, row: "Middle", center: false, color: "red", choosable: false },
+  );
+  assert.deepEqual(
+    view.tables.find((table) => table.number === 6),
+    { number: 6, seats: 4, row: "Middle", center: false, color: "green", choosable: true },
+  );
+});
+
+test("a red Table cannot be chosen", () => {
+  const view = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [
+      {
+        table: 5,
+        partySize: 2,
+        duration: "90 minutes",
+        start: "2026-10-23T07:00:00.000Z",
+        name: "Alex Kim",
+        phone: "0400 111 222",
+      },
+    ],
+    action: {
+      type: "reserve",
+      partySize: 3,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 5,
+      name: "Sam Taylor",
+      phone: "0412 345 678",
+    },
+  });
+
+  expectScreen(view, "floor");
+  assert.equal(view.reservation, null);
+  assert.equal(view.tables.find((table) => table.number === 5)?.choosable, false);
+});
+
+test("the next Reservation may start when the earlier one ends", () => {
+  const earlier = {
+    table: 7,
+    partySize: 2,
+    duration: "90 minutes" as const,
+    start: "2026-10-23T07:00:00.000Z",
+    name: "Alex Kim",
+    phone: "0400 111 222",
+  };
+
+  const stillTaken = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [earlier],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "1 hour",
+      day: "2026-10-23",
+      start: "7:00 pm",
+      table: 7,
+    },
+  });
+  expectScreen(stillTaken, "floor");
+  assert.equal(stillTaken.tables.find((table) => table.number === 7)?.color, "red");
+  assert.equal(stillTaken.tables.find((table) => table.number === 7)?.choosable, false);
+
+  const backToBack = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [earlier],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "1 hour",
+      day: "2026-10-23",
+      start: "7:30 pm",
+      table: 7,
+      name: "Sam Taylor",
+      phone: "0412 345 678",
+    },
+  });
+  expectScreen(backToBack, "success");
+  assert.equal(backToBack.start, "7:30 pm");
+  assert.equal(backToBack.table, 7);
+  assert.equal(backToBack.reservation.start, "2026-10-23T08:30:00.000Z");
+});
+
+test("the start list offers 6:30 pm and leaves out 6:00 pm when every fitting Table is taken at 6:00 pm", () => {
+  const reservations = [
+    {
+      table: 10,
+      partySize: 5,
+      duration: "1 hour" as const,
+      start: "2026-10-23T06:30:00.000Z",
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+    {
+      table: 11,
+      partySize: 5,
+      duration: "2 hours" as const,
+      start: "2026-10-23T06:30:00.000Z",
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+    {
+      table: 12,
+      partySize: 5,
+      duration: "2 hours" as const,
+      start: "2026-10-23T06:30:00.000Z",
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+  ];
+
+  const view = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations,
+    action: {
+      type: "reserve",
+      partySize: 5,
+      duration: "90 minutes",
+      day: "2026-10-23",
+    },
+  });
+
+  expectScreen(view, "starts");
+  assert.equal(view.starts.includes("6:00 pm"), false);
+  assert.equal(view.starts.includes("6:30 pm"), true);
+
+  const blocked = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations,
+    action: {
+      type: "reserve",
+      partySize: 5,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+    },
+  });
+  expectScreen(blocked, "starts");
+});
+
+test("a day whose fitting Tables are all taken shows 0 and does not open", () => {
+  const reservations = [10, 11, 12].flatMap((table) => [
+    {
+      table,
+      partySize: 5,
+      duration: "2 hours" as const,
+      start: "2026-10-23T06:30:00.000Z",
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+    {
+      table,
+      partySize: 5,
+      duration: "2 hours" as const,
+      start: "2026-10-23T08:30:00.000Z",
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+  ]);
+
+  const view = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations,
+    action: { type: "reserve", partySize: 5, duration: "90 minutes" },
+  });
+
+  expectScreen(view, "calendar");
+  assert.deepEqual(view.days[3], {
+    date: "2026-10-23",
+    label: "Friday 23 October",
+    count: 0,
+    selectable: false,
+  });
+
+  const opened = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations,
+    action: {
+      type: "reserve",
+      partySize: 5,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "8:00 pm",
+    },
+  });
+  expectScreen(opened, "calendar");
+});
+
+test("an open day counts only fitting Tables that still have a free start", () => {
+  const reservations = [
+    {
+      table: 12,
+      partySize: 5,
+      duration: "2 hours" as const,
+      start: "2026-10-23T06:30:00.000Z",
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+    {
+      table: 12,
+      partySize: 5,
+      duration: "2 hours" as const,
+      start: "2026-10-23T08:30:00.000Z",
+      name: "Alex Kim",
+      phone: "0400 111 222",
+    },
+  ];
+
+  const view = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations,
+    action: { type: "reserve", partySize: 5, duration: "90 minutes" },
+  });
+
+  expectScreen(view, "calendar");
+  assert.equal(view.days[0].count, 3);
+  assert.deepEqual(view.days[3], {
+    date: "2026-10-23",
+    label: "Friday 23 October",
+    count: 2,
+    selectable: true,
+  });
+});
+
+test("changing the party size clears the chosen day, start, and Table", () => {
+  const kept = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [],
+    action: {
+      type: "reserve",
+      partySize: 4,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 7,
+    },
+  });
+  expectScreen(kept, "confirm");
+  assert.equal(kept.table, 7);
+  assert.equal(kept.day, "2026-10-23");
+  assert.equal(kept.start, "6:00 pm");
+
+  const cleared = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [],
+    action: {
+      type: "reserve",
+      partySize: 4,
+      duration: "90 minutes",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 7,
+      change: "party size",
+    },
+  });
+  expectScreen(cleared, "calendar");
+  assert.equal(cleared.partySize, 4);
+  assert.equal(cleared.duration, "90 minutes");
+  assert.equal(cleared.reservation, null);
+});
+
+test("changing the duration clears the chosen day, start, and Table", () => {
+  const cleared = serveGuest({
+    now: atSydney("2026-10-20T14:00:00"),
+    reservations: [],
+    action: {
+      type: "reserve",
+      partySize: 2,
+      duration: "2 hours",
+      day: "2026-10-23",
+      start: "6:00 pm",
+      table: 7,
+      change: "duration",
+    },
+  });
+
+  expectScreen(cleared, "calendar");
+  assert.equal(cleared.partySize, 2);
+  assert.equal(cleared.duration, "2 hours");
+  assert.equal(cleared.reservation, null);
+});
+
 const waitMessage =
   "Average wait time is 20\u201360 minutes. Pay the balance at Big Al's Pizza.";
 

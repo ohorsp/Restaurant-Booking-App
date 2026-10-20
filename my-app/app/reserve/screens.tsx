@@ -17,6 +17,7 @@ export function reserveHref(parts: {
   day?: string;
   start?: string;
   table?: number;
+  change?: "party size" | "duration";
 }) {
   const params = new URLSearchParams();
   params.set("partySize", String(parts.partySize));
@@ -24,6 +25,7 @@ export function reserveHref(parts: {
   if (parts.day) params.set("day", parts.day);
   if (parts.start) params.set("start", parts.start);
   if (parts.table !== undefined) params.set("table", String(parts.table));
+  if (parts.change) params.set("change", parts.change);
   return `/reserve?${params.toString()}`;
 }
 
@@ -32,6 +34,9 @@ function Filters(props: {
   partySizes: number[];
   duration: Duration;
   durations: Duration[];
+  day?: string;
+  start?: string;
+  table?: number;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -49,6 +54,10 @@ function Filters(props: {
                   href={reserveHref({
                     partySize: size,
                     duration: props.duration,
+                    day: props.day,
+                    start: props.start,
+                    table: props.table,
+                    change: size === props.partySize ? undefined : "party size",
                   })}
                   aria-current={size === props.partySize ? "true" : undefined}
                 />
@@ -73,6 +82,10 @@ function Filters(props: {
                   href={reserveHref({
                     partySize: props.partySize,
                     duration,
+                    day: props.day,
+                    start: props.start,
+                    table: props.table,
+                    change: duration === props.duration ? undefined : "duration",
                   })}
                 />
               }
@@ -177,6 +190,7 @@ function Starts({ view }: { view: StartsView }) {
         partySizes={view.partySizes}
         duration={view.duration}
         durations={view.durations}
+        day={view.day}
       />
       <section className="flex flex-col gap-3">
         <h2 className="text-xl font-semibold">Start</h2>
@@ -215,18 +229,20 @@ function TableChoice({
   table: FloorTable;
   href: string;
 }) {
-  const green = table.color === "green";
+  const className =
+    table.color === "green"
+      ? "h-16 w-full flex-col bg-green-700 text-xs text-white hover:bg-green-800"
+      : "h-16 w-full flex-col bg-red-700 text-xs text-white disabled:opacity-100";
+  if (!table.choosable) {
+    return (
+      <Button disabled className={className}>
+        <span className="text-base">Table {table.number}</span>
+        <span>{table.seats} seats</span>
+      </Button>
+    );
+  }
   return (
-    <Button
-      disabled={!table.choosable}
-      className={
-        green
-          ? "h-16 w-full flex-col bg-green-700 text-xs text-white hover:bg-green-800"
-          : "h-16 w-full flex-col text-xs"
-      }
-      nativeButton={false}
-      render={table.choosable ? <Link href={href} /> : undefined}
-    >
+    <Button className={className} nativeButton={false} render={<Link href={href} />}>
       <span className="text-base">Table {table.number}</span>
       <span>{table.seats} seats</span>
     </Button>
@@ -262,6 +278,8 @@ function Floor({ view }: { view: FloorView }) {
         partySizes={view.partySizes}
         duration={view.duration}
         durations={view.durations}
+        day={view.day}
+        start={view.start}
       />
       <section className="flex flex-col gap-4">
         <h2 className="text-xl font-semibold">Table</h2>
@@ -335,6 +353,9 @@ export function ConfirmDetails({
         partySizes={view.partySizes}
         duration={view.duration}
         durations={view.durations}
+        day={view.day}
+        start={view.start}
+        table={view.table}
       />
       <dl className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-4">
