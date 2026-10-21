@@ -11,3 +11,7 @@ Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Menu clock
+
+A page that only shows the Menu passes a fixed instant into `serveGuest`. Next.js prerender: `my-app/node_modules/next/dist/docs/`.
